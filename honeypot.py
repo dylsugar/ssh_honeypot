@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 import traceback
+import subprocess
 
 import paramiko
 from paramiko.py3compat import b, u, decodebytes
@@ -17,13 +18,18 @@ paramiko.util.log_to_file("demo_server.log")
 
 host_key = paramiko.RSAKey(filename="test_rsa.key")
 # host_key = paramiko.DSSKey(filename='test_dss.key')
-
+count = 0
+global HOST
+global PORT
+global USERNAME
+global PASSWORD
 #print("Read key: " + u(hexlify(host_key.get_fingerprint())))
 
 
 class Server(paramiko.ServerInterface):
     # 'data' is the output of base64.b64encode(key)
     # (using the "user_rsa_key" files)
+    global USERNAME
     data = (
         b"AAAAB3NzaC1yc2EAAAABIwAAAIEAyO4it3fHlmGZWJaGrfeHOVY7RWO3P9M7hp"
         b"fAu7jJ2d7eothvfeuoRFtJwhUmZDluRdFyhFY/hFAh76PJKGAusIqIQKlkJxMC"
@@ -31,9 +37,13 @@ class Server(paramiko.ServerInterface):
         b"UWT10hcuO4Ks8="
     )
     good_pub_key = paramiko.RSAKey(data=decodebytes(data))
-
+    
+    print("Count: ",count)
+    count+=1
     def __init__(self):
         self.event = threading.Event()
+        t = threading.Thread(target=self.check_channel_shell_request,args=(self.event,))
+        t.start()
 
     def check_channel_request(self, kind, chanid):
         if kind == "session":
@@ -48,6 +58,7 @@ class Server(paramiko.ServerInterface):
             x = x.strip()
             user_list.append(x)
         if username in user_list:
+            USERNAME = username
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
 
@@ -112,6 +123,9 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+HOST = socket.gethostbyname(socket.gethostname())
+PORT = 22
+USERNAME = 'Amir71'
 try:
     sock.listen(100)
     print("Listening for connection ...")
@@ -146,14 +160,46 @@ try:
     if not server.event.is_set():
         print("*** Client never asked for a shell.")
         sys.exit(1)
-
+    
+    
+    #print(chan.recv(1024))
     chan.send("\r\n\r\n############## HW5 Server ###################\r\n\r\n")
-    chan.send("$")
-    f = chan.makefile("rU")
-    username = f.readline().strip("\r\n")
-    chan.send("\r\nI don't like you, " + username + ".\r\n")
-    chan.close()
+    print("Username: ",USERNAME)
+    print("Host: ",HOST)
+    print('Port: ',PORT)
+    print(type(chan))
+    chan.send(USERNAME+"@honeypot :/$ ")
+    command = ""
+    while True:    
 
+        uinput = chan.recv(1024)
+        chan.send(uinput)
+        command = command + uinput.decode()
+        if uinput.decode() == '\r':
+            #chan.send("\r\n")
+            p = subprocess.Popen(command.strip(), shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            print(p.stdout)
+            stdout,stderr=p.communicate()
+            chan.sendall(stdout)
+            chan.sendall_stderr(stderr)
+            chan.send_exit_status(p.returncode)
+            print(stdout)
+            #if result == []:
+            #    print(p.stderr.readlines())    
+            #    chan.send(p.stderr.readlines())
+            #else:
+            #    print(result)
+            #    chan.send(result)
+            chan.send("\r\n")
+            command = ""
+            chan.send(USERNAME+"@honeypot :/$ ")
+        if uinput == "exiting":
+            break
+    #while True:
+    #    chan.send(USERNAME+"@honeypot:/$")
+    #    command = chan.recv(1024)
+    #chan.exec_command(command)
+    chan.close()
 except Exception as e:
     print("*** Caught exception: " + str(e.__class__) + ": " + str(e))
     traceback.print_exc()
