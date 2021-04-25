@@ -72,7 +72,6 @@ while flag == 0:
     t.load_server_moduli()
     t.add_server_key(host_key)
     server = Server()
-    print(host_key)
     f = open("usernames.txt",'r')
     raw_output = f.readlines()
     user_list = []
@@ -94,7 +93,7 @@ while flag == 0:
         print("*** No channel.")
         sys.exit(1)
    
-    print("Channel has been open\n\n")
+    print("Channel has been opened\n\n")
     server.event.wait(10)
     if not server.event.is_set():
         print("*** Client never asked for a shell.")
@@ -122,6 +121,7 @@ while flag == 0:
     chan.send("*********************************************************\r\n")
     chan.send(server.uname+"@honeypot:/$ ")
     command = ""
+    add_dir = ''
     while True:    
         chan.settimeout(60)
         try:
@@ -136,21 +136,23 @@ while flag == 0:
             command = command.strip()
             chan.send("\r\n")
             each_command = command.split(' ')
-            print(each_command)
-            currwodir = os.getcwd()
-            print(currwodir)
-            if len(each_command) > 1:
-                directory = each_command[1].strip('/')
-            else:
-                directory = each_command[0]
-
+            print("Command breakdown: ",each_command)
+            
             if 'cd' in each_command:
                 try:
-                    os.chdir(os.path.abspath(directory))
+                    if each_command[1][0]=='/':
+                        os.chdir(os.path.abspath('..'))
+                        os.chdir(os.path.abspath(each_command[1][1:]))
+                        add_dir = each_command[1]
+                    else:
+                        os.chdir(os.path.abspath(each_command[1]))
+                        add_dir = '/'+each_command[1].strip('./')
                     cwd = os.getcwd()
-                    print("CWD: ",cwd)
+                    if each_command[1] == "..":
+                        add_dir=''
+                    print("Used cd - new CWD: ",cwd)
                 except:
-                    chan.send("-bash: cd: "+directory+": No such file or directory\r\n")
+                    chan.send("-bash: cd: "+each_command[1]+": No such file or directory\r\n")
             else:
                 p = subprocess.Popen(command, shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 if command == "exit":
@@ -165,8 +167,8 @@ while flag == 0:
                 chan.sendall(output)
                 chan.sendall_stderr(stderr)
                 chan.send_exit_status(p.returncode)
-                print(stdout)
+                print("Byte form output",stdout)
             #chan.send("\r\n")
             command = ""
-            chan.send(server.uname+"@honeypot:/$ ")
+            chan.send(server.uname+"@honeypot:"+add_dir+"/$ ")
     chan.close()
