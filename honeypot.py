@@ -1,12 +1,10 @@
-#!/usr/bin/env python
-
 import base64
 import os
 import socket
 import sys
 import threading
 import subprocess
-
+import time
 import paramiko
 
 
@@ -18,7 +16,6 @@ class Server(paramiko.ServerInterface):
         t = threading.Thread(target=self.check_channel_shell_request,args=(self.event,))
         t.start()
         self.uname = " "
-        self.count = 0
 
     def check_channel_request(self, kind, chanid):
         if kind == "session":
@@ -38,6 +35,8 @@ class Server(paramiko.ServerInterface):
     ):
         return True
 
+
+# START of program is here --------------------------------------------------------------
 argument = sys.argv
 PORT = 0
 if '-p' in argument and len(argument) == 3:
@@ -124,7 +123,13 @@ while flag == 0:
     chan.send(server.uname+"@honeypot:/$ ")
     command = ""
     while True:    
-        uinput = chan.recv(1024)
+        chan.settimeout(60)
+        try:
+            uinput = chan.recv(1024)
+        except socket.timeout:
+            print("Socket channel timeout: past 60 seconds")
+            break
+
         chan.send(uinput)
         command = command + uinput.decode()
         if uinput.decode() == '\r':
@@ -145,7 +150,7 @@ while flag == 0:
                     cwd = os.getcwd()
                     print("CWD: ",cwd)
                 except:
-                    chan.send("-bash: cd: "+directory+": No such file or directory")
+                    chan.send("-bash: cd: "+directory+": No such file or directory\r\n")
             else:
                 p = subprocess.Popen(command, shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 if command == "exit":
@@ -161,7 +166,7 @@ while flag == 0:
                 chan.sendall_stderr(stderr)
                 chan.send_exit_status(p.returncode)
                 print(stdout)
-            chan.send("\r\n")
+            #chan.send("\r\n")
             command = ""
             chan.send(server.uname+"@honeypot:/$ ")
     chan.close()
